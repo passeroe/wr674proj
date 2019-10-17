@@ -1,14 +1,5 @@
-# This function will calculate EP for modeled and historic flows. This function cannot extrapolate EP values.
-
-enforce_med <- "Yes"
-per_red <- 0.20 # percent flow reduction set to 0 if adding withdrawal
-median_q <- 160 # median flow value - could use monthly or annual
-withdrawal <- 5 # set to 0 if doing percent flow reduction
-
-
-# read in historical flow record
-historic_q <- na.omit(fread(paste(wd,reachName,"_hydrograph",".csv",sep=""),header=TRUE, sep = ",",data.table=FALSE))
-historic_q$date <- as.Date(historic_q$date, format="%m/%d/%Y")
+# This function will calculate EP for modeled and historic flows. 
+# This function cannot extrapolate EP values.
 
 # load flow scenario
 hydrograph <- flow.scenario(hydrograph,enforce_med,per_red,median_q,withdrawal) 

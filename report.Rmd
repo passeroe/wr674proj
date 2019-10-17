@@ -7,15 +7,31 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(data.table)
+library(dplyr)
+library(readr)
+library(stars)
 ```
 
 # Probability of Occurrence of Riparian Vegetation Guilds by Flow Scenario
 
-```{r inputs}
+## Initialize variables
+```{r inputs, message=FALSE}
 # This is where users will put in the % flow reduction, withdrawal, median enforcement, or specify a scenario like flow reduction with climate change
 
+enforce_med <- "Yes"
+per_red <- 0.20 # percent flow reduction set to 0 if adding withdrawal
+median_q <- 160 # median flow value - could use monthly or annual
+withdrawal <- 5 # set to 0 if doing percent flow reduction
 
+# read in historical flow record
+historic_q <- readr::read_csv("Cherry_Braid_hydrograph.csv",col_names = TRUE)
+ep_zone_pref <- readr::read_csv("guild_by_ep.csv",col_names = TRUE)
+inun_q_map <- read_stars("inunQmap.tif")
+```
 
+## Pre-processing
+```{r preprocess}
 
 ```
 
