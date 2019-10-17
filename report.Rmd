@@ -1,0 +1,21 @@
+---
+title: "Project Report"
+author: "Elaina Passero"
+date: "October 17, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Probability of Occurrence of Riparian Vegetation Guilds by Flow Scenario
+
+```{r inputs}
+# This is where users will put in the % flow reduction, withdrawal, median enforcement, or specify a scenario like flow reduction with climate change
+
+
+
+
+```
+
