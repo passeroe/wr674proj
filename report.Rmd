@@ -1,7 +1,7 @@
 ---
 title: "Project Report"
 author: "Elaina Passero"
-date: "October 17, 2019"
+date: "October 29, 2019"
 output: html_document
 ---
 
@@ -33,13 +33,37 @@ inun_q_map <- read_stars("inunQmap.tif")
 
 ## Build Flow Scenario
 ```{r flow_scene}
+# want to have a baseline "historic" scenario to compare to the scenarios the script generates
 source("flow.scenario.R")
 flow_scene <- flow.scenario(historic_q,enforce_med,median_q,withdrawal,per_red)
 
 ```
 
 ## Calculate EP for Flow Scenario
-```{r}
+```{r calc_ep}
+source("q.ep.weibull.R")
+hydro_ep <- q.ep.weibull()
+
+```
+
+## Reclassify inundating Q map to EP
+```{r inunq_to_ep}
+
+```
+
+## Reclassify EP map to Prob(Veg) map
+```{r ep_to_probveg}
+# Each scenario creates a list of raster layers
+# Each object in list is a guild
+
+```
+
+## Compare Prob(Veg) maps for multiple scenarios
+```{r compare_probs}
+# Stack or brick all of the rasters for the same guilds
+# layerStats in raster
+# identify areas/features most sensitive to change - difference in rasters
+# Identify the scenarios with highest probs
 
 
 ```
