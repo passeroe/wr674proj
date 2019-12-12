@@ -1,70 +1,332 @@
 ---
-title: "Project Report"
+title: "Demo of Riparian Vegetation Analysis"
 author: "Elaina Passero"
-date: "October 29, 2019"
+date: "December 13, 2019"
 output: html_document
+bibliography: references.bib
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-library(data.table)
-library(dplyr)
-library(readr)
-library(stars)
-```
+```{r setup,message=FALSE,warning=FALSE,echo=TRUE, results='hide'}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+packages <- c("sp","raster","rgeos","rgdal","sf","spatstat","tidyverse","rasterVis",
+              "ggplot2","data.table","dplyr","stars",
+              "lubridate","rlist","rayshader","xtable","pander")
 
-# Probability of Occurrence of Riparian Vegetation Guilds by Flow Scenario
-
-## Initialize variables
-```{r inputs, message=FALSE}
-# This is where users will put in the % flow reduction, withdrawal, median enforcement, or specify a scenario like flow reduction with climate change
-
-enforce_med <- "No"
-per_red <- 0.20 # percent flow reduction set to 0 if adding withdrawal
-median_q <- 160 # median flow value - could use monthly or annual
-withdrawal <- 0 # set to 0 if doing percent flow reduction
-guild_list <- list("guild1", "guild2", "guild3")
-
-# read in historical flow record
-historic_q <- readr::read_csv("Cherry_Braid_hydrograph.csv",col_names = TRUE)
-ep_zone_pref <- readr::read_csv("guild_by_ep.csv",col_names = TRUE)
-inun_q_map <- read_stars("inunQmap.tif")
-```
-
-## Build Flow Scenario
-```{r flow_scene}
-# want to have a baseline "historic" scenario to compare to the scenarios the script generates
-source("flow.scenario.R")
-flow_scene <- flow.scenario(historic_q,enforce_med,median_q,withdrawal,per_red)
+# load the installed libraries in the packages list 
+lapply(packages, library, character.only=TRUE)
 
 ```
 
-## Calculate EP for Flow Scenario
-```{r calc_ep}
-source("q.ep.weibull.R")
-hydro_ep <- q.ep.weibull()
+## Project Background
+The Verde River Environmental Flow Decision Support System (DSS) is a multi-faceted tool for evaluating the impacts of alternative flow scenarios on riparian and instream habitat. The tool has been developed to determine the environmental flow needs of the Verde Wild and Scenic River corridor, but it is applicable to any river system with the required inputs. The following document contains a demonstration of the methods available for analysis of riparian vegetation. Analysis is based on the riparian vegetation flow response guilds framework @Merritt2010-ro. 
+
+## Overview
+### Study Area - Upstream Beasley site
+This reach is approximately 0.5 km long. It is confined by relatively high canyon walls on the downstream portion of the reach. The channel splits around an island in the center of the channel at low flows.
+```{r study_area, fig.cap = "3D view of study reach"}
+study_area <- raster("inputs/BeasleyUS_0.25m_20191108.tif")
+area_map <- gplot(study_area)+
+  geom_tile(aes(fill=value))+
+  ggtitle("Upstream Beasley Site on Verde River, AZ")
+
+plot_gg(area_map,height = 5, width = 8, scale = 100, theta = 0, phi=85, zoom=.75)
+render_snapshot(clear = TRUE)
 
 ```
 
-## Reclassify inundating Q map to EP
-```{r inunq_to_ep}
+
+### Vegetation Guilds
+1. Drought tolerant shrubs
+2. Tall trees
+```{r def_veg_list}
+veg_list <- c("drgt_tol_shrubs", "tall_trees")
+```
+
+
+### Flow Scenarios
+The probability of occurrence of these flow response guilds will be related to daily exceedance probability of inundating discharges.
+Daily exceedance probability (EP) of inundating discharges will be calculated for three conditions:
+
+1. Historic conditions
+2. 25% reduction in all flows above the monthly median flows (red_above_med_25)
+3. 10% reduction in all flows (red_all_q_10)
+
+
+
+## Required Inputs
+### Digital inundation map 
+The digital inundation map is a raster showing the discharge that inundates each cell in the study area. The cell size is 0.25 m by 0.25 m.
+
+```{r dim, fig.cap = "Digital inundation map for the study area."}
+# load digital inundation map
+wet_map <- raster("inputs/USBeasley1_DIM.tif")
+plot(wet_map,main="Inundating Discharge")
+```
+
+
+### List of discharges with 2D modeling results 
+The 2D hydraulic model was run for 115 discharges. These results were used to make the digital inundation map. 
+```{r modeled_q}
+# load CSV of modeled discharges
+modeled_q <- unlist(readr::read_csv("inputs/modeled_q_list.csv", col_names = FALSE))
 
 ```
 
-## Reclassify EP map to Prob(Veg) map
-```{r ep_to_probveg}
-# Each scenario creates a list of raster layers
-# Each object in list is a guild
+
+### Time series of historic flow record and flow scenarios
+These time series include daily discharge from 10-01-1988 to 9-31-2018. Discharge was calculated using upstream gage records and a rating curve.
+
+```{r hydrographs, fig.cap = "Hydrographs of historic conditions and the alternative scenarios."}
+# load each flow scenario time series
+scene_names <- list("hydrograph","red_above_med_25","red_all_q_10")
+
+read_scenes <- function(name){
+  file_name <- paste("inputs/USBeasley1_",name,".csv",sep="")
+  hg <- readr::read_csv(file_name, col_names = TRUE)
+  hg$date <- as.Date(hg$date, format="%m/%d/%Y")
+  return(hg)
+}
+
+scene_list <- map(scene_names, read_scenes)
+names(scene_list) <- scene_names
+scene_plot_table <- bind_rows(scene_list, .id = "scene")
+
+# plot hydrographs
+ggplot(scene_plot_table,aes(x=date,y=discharge))+
+  geom_line()+
+  theme_gray()+
+  theme(text=element_text(size=14,face = "bold",color = "black"),
+      panel.border = element_rect(fill = NA,size=1),
+      strip.background = element_rect(fill = NA),
+      axis.text.x = element_text(colour = "black",face="plain",angle = 45,hjust=1),
+      axis.text.y = element_text(colour = "black",face="plain"))+
+  facet_wrap(~scene)+
+  labs(x="Date",y="Discharge in CMS")
+
 
 ```
 
-## Compare Prob(Veg) maps for multiple scenarios
-```{r compare_probs}
-# Stack or brick all of the rasters for the same guilds
-# layerStats in raster
-# identify areas/features most sensitive to change - difference in rasters
-# Identify the scenarios with highest probs
+### Relationship between the flow response guilds and a flow component
+Logistic regression equations relating EP and probability of occurrence were developed for guilds based on maps of vegetation produced at the site in 2016 and 2018.
+```{r eqns}
+# display table of equations - due to the syntax of these equations, pandoc is the only one that works
+logit_eqns <- readr::read_csv("inputs/USBeasley1_veg_pref.csv",col_names = TRUE)
+var_names <- c("Eqn","B0","B1","B2")
+logit_eqns_named <- add_column(logit_eqns, var_names, .before="tall_trees")
+pandoc.table(logit_eqns_named, style='simple', split.tables = Inf)
+```
+
+
+## Calculate and Map Daily Exceedance Probability 
+
+EP is calculated for each discharge using the equation for Weibull plotting position shown below where m = rank, N = number of flows on record, and P = Exceedance Probability. 
+
+$$P = \frac{m}{N+1}$$
+
+This value is based on frequency and rank and not on the magnitude of flows. EP values for a particular discharge may be different across different scenarios.
+
+The modeled discharges are added into the data frame of discharges. Linear interpolation is used to find EP of the modeled discharges. If any modeled discharges are larger than the flows on record, they are added to the end of the flow scenario assuming one event per flow. Their weibull plotting position is calculated from their rank in relationship to the flows in the scenario. If any discharges in the scenario are less than the lowest modeled discharge, their EP is set to 1.
+
+EP values for modeled discharges only are extracted. These were the discharges used to create the inundating discharge maps. The inundating discharge map is reclassified with the daily exceedance probability of inundation for each scenario.
+
+
+```{r calc_and_map_ep, fig.cap = "Maps of daily exceedence probability."}
+# calculates daily EP for flows in flow scenario and any modeled discharges above scenario range
+source("src/q.ep.weibull.R")
+hydro_ep_list <- map(scene_list, q.ep.weibull, modeled_q) 
+
+# generates a map of daily EP
+make.ep.maps <- function(hydro_ep){
+  
+  # get EP values for modeled discharges
+  modeled_q_ep <- hydro_ep %>%
+    filter(discharge %in% modeled_q) %>%
+    distinct() %>%
+    arrange(discharge)
+  
+  # build matrix for reclassification
+  rcl_ep <- data.frame(from = modeled_q_ep$discharge,
+               to = c(modeled_q_ep$discharge[-1],Inf), 
+               becomes = modeled_q_ep$EP) %>%
+    as.matrix(.)
+  
+  # reclassify raster
+  ep_map <- reclassify(wet_map, rcl_ep, right = FALSE)
+
+  return(ep_map)
+}
+
+ep_map_list <- map(hydro_ep_list, make.ep.maps) # create EP maps
+
+ep_stack <- stack(ep_map_list)
+spplot(ep_stack)
+
+```
+
+## Make Maps of Probability of Occurrence
+The logistic regression expressions are evaluated for each EP value in the flow scenarios. EP maps are reclassified using the outputs of those expressions to give the areal distribution of probability of occurrence of the vegetation guilds.
+
+```{r map_prob_occur, fig.cap = "Maps of probability of occurrence of the two vegetation guilds by scenario."}
+source("src/find.veg.logit.R") # extracts logistic regression equation for one guild
+source("src/find.prob.occur.R") # calculates probability of occurrence of the guild by plugging EP into the equation
+source("src/make.veg.maps.R") # reclassifies EP maps to probability of occurrence
+
+make.prob.maps <- function(guild){
+  one_veg_logit <- find.veg.logit(logit_eqns, guild)
+  hydro_ep_prob_list <- map(hydro_ep_list, find.prob.occur, guild, one_veg_logit) # outputs discharges, EPs, and Prob of Veg
+  prob_veg_map_stack <- stack(map2(hydro_ep_prob_list, ep_map_list, make.veg.maps, guild)) # creates stack of Prob of Veg maps
+  return(prob_veg_map_stack)
+}
+
+prob_veg_map_list <- map(veg_list, make.prob.maps)
+names(prob_veg_map_list) <- veg_list
+
+plot.rast <- function(map_stack,title){
+  spplot(map_stack,main=title)
+}
+
+map2(prob_veg_map_list,veg_list, plot.rast)
 
 
 ```
 
+Notice that drought tolerant shrubs, which reside on upper terrace of the floodplain, have the highest probability of occurrence on the outer edges of the study area. Tall trees have the highest probability of occurrence overbank but near the channel.
+
+### Distribution of probability of occurrence
+
+These histograms were constructed directly from the rasters of probability of occurrence.
+
+```{r histograms_dts, fig.cap = "Distribution of probability of occurrence of drought tolerant shrubs in the study area. Plots are in the following order: Historic hydrograph, 25% reduction of flows above the monthly median, and 10% reduction of all flows."}
+bx_plt_dts <- hist(prob_veg_map_list$drgt_tol_shrubs, main = "Drought Tolerant Shrubs")
+```
+
+
+```{r histograms_tt, fig.cap = "Distribution of probability of occurrence of tall trees in the study area. Plots are in the following order: Historic hydrograph, 25% reduction of flows above the monthly median, and 10% reduction of all flows."}
+bx_plt_tt <- hist(prob_veg_map_list$tall_trees, main = "Tall Trees")
+```
+
+## Quantify Probability of Occurrence by Guild for each Scenario
+
+Areas are reclassified as high (>0.7), moderate (0.6 to 0.7), and low probability of occurrence (<0.6) per guild.
+```{r area_quality, fig.cap="Maps showing areas of high (green), moderate (yellow), or low (grey) probability of occurrence for each guild by scenario."}
+
+# build matrix for reclassification
+rcl_qual <- data.frame(from = c(-Inf,0.6,0.7),
+                       to = c(0.6,0.7,Inf),
+                       becomes = c(1,2,3)) %>%
+  as.matrix(.)
+
+# reclassify rasters
+prob_quality_map_list <- map(prob_veg_map_list, reclassify, rcl_qual)
+names(prob_quality_map_list) <- veg_list
+
+map2(prob_quality_map_list,veg_list, plot.rast)
+
+
+```
+
+Neither of the scenarios is likely to result in encroachment from drought tolerant shrubs. However, there is a change in the distribution of the probability of tall trees.
+
+### Total area by probability of occurrence
+
+The total area of high, moderate, and low probability of occurrence per guild are calculated for each guild. Areas are in square meters.
+```{r total_area}
+
+sum_area <- function(map_stack){ # per guild builds data frame of area in each quality for all scenarios
+  map_list <- unstack(map_stack)
+  
+  sort_quality <- function(one_map){ # per scenario calculates area in each quality
+    areas <- list()
+    high <- one_map
+    high[high != 3] <- NA
+    areas$high_area <- cellStats(high,stat="sum",na.rm = TRUE)/3
+    mod <- one_map
+    mod[mod != 2] <- NA
+    areas$mod_area <- cellStats(mod,stat="sum",na.rm = TRUE)/2
+    low <- one_map
+    low[low != 1] <- NA
+    areas$low_area <- cellStats(low,stat="sum",na.rm = TRUE)
+    areas_df <- bind_rows(areas)
+    return(areas_df)
+  }
+  
+  areas_df_list <- map(map_list,sort_quality)
+  names(areas_df_list) <- scene_names
+  all_scene_area_df <- bind_rows(areas_df_list,.id = "scene")
+  return(all_scene_area_df)
+}
+
+
+all_guild_areas <- map(prob_quality_map_list,sum_area) # list of data frames of area by quality category 
+
+map(all_guild_areas, pandoc.table, style='simple')
+
+```
+
+For tall trees, the scenario reducing 10% of all flows maintains more areas with a high probability of occurrence than the alternative scenario. The 10% reduction scenario had an increase in moderate probability area and a decrease in the low probability area which could signal the potential for encroachment of tall trees. In this situation it is important to examine the maps of probability of occurrence.
+
+## Compare the Results of the Scenarios to the Historic Conditions
+
+### Areal distribution of higher probability areas
+
+Since the drought tolerant shrubs had no areas of moderate or high probability of occurrence, the areal distribution of the higher probability areas does not need to be examined.
+
+```{r higher_prob, fig.cap="Maps of distribution of high probability areas for tall trees only."}
+pq_map_tt_list <- unstack(prob_quality_map_list$tall_trees) # stack of tall trees 
+
+ higher_quality <- function(one_map){ # per scenario selects higher probability areas
+    one_map[one_map != 3] <- 0
+    return(one_map)
+ }
+ 
+ higher_prob_tt <- stack(map(pq_map_tt_list, higher_quality)) # create stack of high probability areas
+ names(higher_prob_tt) <- scene_names
+ 
+ spplot(higher_prob_tt,main = "High Probability of Occurrence of Tall Trees")
+
+```
+
+### Areal distribution of change in high probability areas for tall trees
+```{r map_chg, fig.cap = "Maps of change in high probability areas. Areas in purple had no change. Areas in blue are no longer high probability of occurrence areas. Areas in yellow are areas that became high probability of occurrence areas." }
+base_map_tt <- higher_prob_tt$hydrograph
+other_maps_tt <- higher_prob_tt[[2:3]]
+map_chg <- function(one_map){
+  chg_map <- base_map_tt-one_map
+}
+
+diff_map_brick <- base_map_tt - other_maps_tt
+names(diff_map_brick) <- scene_names[2:3]
+spplot(diff_map_brick, main = "Change in High Probability Areas")
+
+```
+
+### Change in total high probability area
+```{r plot_chg, fig.cap="Barplot percent change in high probability of occurrence area by scenario."}
+tt_baseline <- all_guild_areas$tall_trees %>% # historic total area of high probability
+  filter(scene == "hydrograph") %>%
+  select(high_area)
+
+tt_alt_scenes <- all_guild_areas$tall_trees %>%
+  select(scene,high_area) %>%
+  filter(scene != "hydrograph") %>%
+  mutate(per_chg = (high_area-tt_baseline$high_area)/tt_baseline$high_area*100) # calculate percent change from historic
+
+ggplot(tt_alt_scenes,aes(x=scene, y=per_chg, fill=scene))+
+  geom_bar(position = "dodge",stat = "identity")+
+  labs(y = "Percent Change in High Probability Area")
+```
+
+
+The 25% reduction scenario leads to more change in high probability area than the 10% reduction scenario in both quantity and distribution. The maps of change show that habitat is being both lost and gained in greater quantities than in the 10% reduction scenario. Overall, the 25% reduction scenario had almost 8% loss in high probability areas compared to just over 1% loss for the 10% reduction scenario. However, changing the spatial distribution of where a guild resides, even if the total area remains the same, can have negative consequences for the ecosystem. It is important to include spatial representations of change in addition to summarizing those changes graphically.
+
+## Incorporating Vegetation Results into the DSS
+Characteristics of scenarios that can be evaluated from these results include:
+
+1. Potential for vegetation encroachment.
+2. Maintenance of high value vegetation or limitation low value vegetation like invasives.
+3. Changes in the spatial distribution of vegetation guilds.
+4. Net loss of high probability areas.
+
+Evaluating change in the vegetation guilds in the study area is only one component of the DSS. These results should be combined with results from instream habitat for an understanding of the impacts on the ecosystem as a whole. In some situations it may also be appropriate to try to adjust flow scenarios to better serve riparian and instream habitat.
+
+## References
